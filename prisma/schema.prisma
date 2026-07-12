@@ -1,0 +1,251 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================
+// ENUMS
+// ============================
+
+enum UserRole {
+  ADMIN
+  SALES
+}
+
+// ============================
+// MODELS
+// ============================
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(ADMIN)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relasi: satu User bisa punya banyak Contact yang di-assign ke dia
+  contacts Contact[]
+
+  // Relasi: satu User bisa membuat banyak Activity (log timeline)
+  activities Activity[]
+
+  // Relasi: satu User bisa punya banyak Task
+  tasks Task[]
+
+  @@map("users")
+}
+
+enum ContactStage {
+  NEW_LEAD
+  CONTACTED
+  TRIAL_SCHEDULED
+  TEST_DONE
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum LeadSource {
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  REFERRAL
+  WALK_IN
+  WEBSITE
+  OTHER
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+}
+
+model Contact {
+  id       String  @id @default(cuid())
+  fullName String
+  phone    String
+  email    String?
+
+  // Info tambahan
+  address      String?
+  dateOfBirth  DateTime?
+  englishLevel String? // ringkasan level terakhir, misal "Intermediate"
+
+  // Pipeline & sumber
+   stage       ContactStage    @default(NEW_LEAD)
+  source      LeadSource      @default(OTHER)
+  temperature LeadTemperature @default(WARM)
+
+  // Kalau lead gagal closing
+  closedLostReason String?
+
+  // Sales yang menangani
+  assignedToId String?
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id])
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relasi ke tabel lain (akan aktif penuh setelah model terkait dibuat)
+  activities Activity[]
+  tasks      Task[]
+  schedules  Schedule[]
+
+  @@index([stage])
+  @@index([assignedToId])
+  @@map("contacts")
+}
+
+enum ActivityType {
+  CALL
+  WHATSAPP
+  EMAIL
+  MEETING
+  NOTE
+  STAGE_CHANGE
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  description String
+
+  // Relasi ke Contact yang bersangkutan
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Siapa yang mencatat aktivitas ini
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+  @@map("activities")
+}
+
+enum TaskStatus {
+  TODO
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+
+  // Opsional: task boleh tidak terhubung ke Contact tertentu
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // Siapa yang bertanggung jawab atas task ini
+  assignedToId String?
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dueDate])
+  @@index([contactId])
+  @@index([status])
+  @@map("tasks")
+}
+
+enum ScheduleType {
+  TRIAL_CLASS
+  PLACEMENT_TEST
+  SPOKEN_TEST
+  REGULAR_CLASS
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  DONE
+  CANCELED
+  RESCHEDULED
+}
+
+model Schedule {
+  id     String         @id @default(cuid())
+  type   ScheduleType
+  status ScheduleStatus @default(SCHEDULED)
+
+  scheduledAt DateTime // tanggal + jam pelaksanaan
+  notes       String?
+
+  // Relasi wajib ke Contact
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Hasil test (kalau type-nya PLACEMENT_TEST atau SPOKEN_TEST)
+  testResults TestResult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([scheduledAt])
+  @@index([type])
+  @@map("schedules")
+}
+
+model TestResult {
+  id        String  @id @default(cuid())
+  skillName String // contoh: "Reading", "Listening", "Grammar", "Speaking"
+  score     Float
+  maxScore  Float   @default(100)
+  notes     String?
+
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([scheduleId])
+  @@map("test_results")
+}
+
+enum WaTemplateCategory {
+  FOLLOW_UP
+  TRIAL_REMINDER
+  TEST_REMINDER
+  CLASS_REMINDER
+  OFFER
+  PAYMENT_REMINDER
+  GENERAL
+}
+
+model WaTemplate {
+  id       String             @id @default(cuid())
+  title    String
+  category WaTemplateCategory @default(GENERAL)
+  content  String // isi pesan, boleh mengandung placeholder seperti {{nama}}
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("wa_templates")
+}
